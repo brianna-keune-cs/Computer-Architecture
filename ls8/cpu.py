@@ -168,7 +168,7 @@ class CPU:
 
         print()
 
-    def run_op(self, num_ops, fn, a, b):
+    def run_op(self, fn, a, b, num_ops):
         if num_ops is 2:
             fn(a, b)
         elif num_ops is 1:
@@ -176,11 +176,22 @@ class CPU:
         else:
             fn()
 
-    def alu(self, ops, a, b, num_operands):
+    def op_sorter(self, determiner, op, a, b, num_ops):
+        if determiner is 2:  # it is an alu op
+            self.alu(op, a, b, num_ops)
+
+        elif determiner is 1:  # it is a pc mutator
+            self.run_op(num_ops, self.pc_mutators[op], a, b)
+            self.run_op(self.pc_mutators[op], a, b, num_ops)
+
+        else:  # it is a different kin of op
+            self.run_op(self.pc_ops[op], a, b, num_ops)
+
+    def alu(self, ops, a, b, num_ops):
         try:
-            if num_operands is 2:
+            if num_ops is 2:
                 self.reg[a] = self.alu_ops[ops](self.reg[a], self.reg[b])
-            elif num_operands is 1:
+            elif num_ops is 1:
                 self.reg[a] = self.alu_ops[ops](self.reg[a])
             else:
                 self.reg[a] = self.alu_ops[ops]()
@@ -203,16 +214,7 @@ class CPU:
             operand_b = self.ram_read(
                 self.pc + 2) if self.pc + 2 < 257 else None
 
-            if alu_or_pc is 2: # it is an alu op
-                self.alu(IR, operand_a, operand_b, num_operands)
-
-            elif alu_or_pc is 1: # it is a pc mutator
-                self.run_op(
-                    num_operands, self.pc_mutators[IR], operand_a, operand_b)
-
-            else: # it is a different kin of op
-                self.run_op(
-                    num_operands, self.pc_ops[IR], operand_a, operand_b)
+            self.op_sorter(alu_or_pc, IR, operand_a, operand_b, num_operands)
 
             self.pc += instruction_length
 
