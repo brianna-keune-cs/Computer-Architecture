@@ -3,10 +3,47 @@
 import sys
 import os
 
-HTL = 0b00000001
-LDI = 0b10000010
-PRN = 0b01000111
+division_err = f'Please no division by 0.'
+
+# ALU ops
+ADD = 0b10100000
+SUB = 0b10100001
 MUL = 0b10100010
+DIV = 0b10100011
+MOD = 0b10100100
+INC = 0b01100101
+DEC = 0b01100110
+CMP = 0b10100111
+AND = 0b10101000
+NOT = 0b01101001
+OR = 0b10101010
+XOR = 0b10101011
+SHL = 0b10101100
+SHR = 0b10101101
+
+# PC mutators
+CALL = 0b01010000
+RET = 0b00010001
+INT = 0b01010010
+IRET = 0b00010011
+JMP = 0b01010100
+JEQ = 0b01010101
+JNE = 0b01010110
+JGT = 0b01010111
+JLT = 0b01011000
+JLE = 0b01011001
+JGE = 0b01011010
+
+# Other
+NOP = 0b00000000
+HLT = 0b00000001
+LDI = 0b10000010
+LD = 0b10000011
+ST = 0b10000100
+PUSH = 0b0100010
+POP = 0b01000110
+PRN = 0b01000111
+PRA = 0b01001000
 
 
 class CPU:
@@ -15,6 +52,46 @@ class CPU:
         self.ram = [0] * 256
         self.pc = 0
         self.fl = 0
+
+        self.alu_ops = {}
+        self.alu_ops[ADD] = lambda a, b: a + b
+        self.alu_ops[SUB] = lambda a, b: a - b
+        self.alu_ops[MUL] = lambda a, b: a * b
+        self.alu_ops[DIV] = lambda a, b: division_err if b is 0 else a / b
+        self.alu_ops[MOD] = lambda a, b: division_err if b is 0 else a % b
+        self.alu_ops[INC] = lambda a: a + 1
+        self.alu_ops[DEC] = lambda a: a - 1
+        self.alu_ops[CMP] = lambda a, b: 1 if a is b else 0
+        self.alu_ops[AND] = lambda a, b: a & b
+        self.alu_ops[NOT] = lambda a: ~a
+        self.alu_ops[OR] = lambda a, b: a | b
+        self.alu_ops[XOR] = lambda a, b: a ^ b
+        self.alu_ops[SHL] = lambda a, b: a << b
+        self.alu_ops[SHR] = lambda a, b: a >> b
+
+        self.pc_mutators = {}
+        self.pc_mutators[CALL] = None
+        self.pc_mutators[RET] = None
+        self.pc_mutators[INT] = None
+        self.pc_mutators[IRET] = None
+        self.pc_mutators[JMP] = None
+        self.pc_mutators[JEQ] = None
+        self.pc_mutators[JNE] = None
+        self.pc_mutators[JGT] = None
+        self.pc_mutators[JLT] = None
+        self.pc_mutators[JLE] = None
+        self.pc_mutators[JGE] = None
+
+        self.pc_ops = {}
+        self.pc_ops[NOP] = None
+        self.pc_ops[HLT] = lambda: sys.exit(1)
+        self.pc_ops[LDI] = self.handle_ldi
+        self.pc_ops[LD] = None
+        self.pc_ops[ST] = None
+        self.pc_ops[PUSH] = None
+        self.pc_ops[POP] = None
+        self.pc_ops[PRN] = lambda a: print(self.reg[a])
+        self.pc_ops[PRA] = None
 
     def write_program_to_memory(self, program_file):
         address = 0
@@ -71,22 +148,6 @@ class CPU:
         else:
             raise IndexError
 
-    def alu(self, op, reg_a, reg_b):
-        """ALU operations."""
-
-        if op == "ADD":
-            self.reg[reg_a] += self.reg[reg_b]
-        elif op == MUL:
-            self.reg[reg_a] *= self.reg[reg_b]
-
-        # elif op == "SUB": etc
-        else:
-            raise Exception("Unsupported ALU operation")
-
-    def ops(self, op, reg_a, reg_b):
-        '''OPS operations.'''
-        pass
-
     def trace(self):
         """
         Handy function to print out the CPU state. You might want to call this
@@ -107,41 +168,53 @@ class CPU:
 
         print()
 
+    def run_op(self, num_ops, fn, a, b):
+        if num_ops is 2:
+            fn(a, b)
+        elif num_ops is 1:
+            fn(a)
+        else:
+            fn()
+
+    def alu(self, ops, a, b, num_operands):
+        try:
+            if num_operands is 2:
+                self.reg[a] = self.alu_ops[ops](self.reg[a], self.reg[b])
+            elif num_operands is 1:
+                self.reg[a] = self.alu_ops[ops](self.reg[a])
+            else:
+                self.reg[a] = self.alu_ops[ops]()
+        except Exception:
+            print("Unsupported ALU operation")
+
     def run(self):
         """Run the CPU."""
+        operands = 0b11000000
+        b_or_c = 0b00110000
 
         while True:
             IR = self.ram_read(self.pc)
-            operand_a = self.ram_read(self.pc + 1)
-            operand_b = self.ram_read(self.pc + 2)
+            num_operands = (IR & operands) >> 6
+            instruction_length = 1 + num_operands
+            alu_or_pc = (IR & b_or_c) >> 4
 
-            if IR is HTL:
-                self.handle_halt()
-            elif IR is LDI:
-                self.handle_ldi(operand_a, operand_b)
-                self.pc += 2
-            elif IR is PRN:
-                self.handle_print(operand_a)
-                self.pc += 1
-            elif IR is MUL:
-                self.alu(IR, operand_a, operand_b)
-                self.pc += 2
+            operand_a = self.ram_read(
+                self.pc + 1) if self.pc + 1 < 257 else None
+            operand_b = self.ram_read(
+                self.pc + 2) if self.pc + 2 < 257 else None
 
-            self.pc += 1
+            if alu_or_pc is 2: # it is an alu op
+                self.alu(IR, operand_a, operand_b, num_operands)
 
-    def handle_halt(self):
-        # cpu reset
-        # for i in range(0, 6):
-        #     self.reg[i] = 0
-        # self.reg[7], self.pc, self.fl, self.ram == 0xF4, 0, 0, [0] * 256
+            elif alu_or_pc is 1: # it is a pc mutator
+                self.run_op(
+                    num_operands, self.pc_mutators[IR], operand_a, operand_b)
 
-        sys.exit(1)
+            else: # it is a different kin of op
+                self.run_op(
+                    num_operands, self.pc_ops[IR], operand_a, operand_b)
 
-    def handle_print(self, index):
-        '''
-        print numeric value stored at given register
-        '''
-        print(self.reg[index])
+            self.pc += instruction_length
 
     def handle_ldi(self, register_index, value):
         '''
