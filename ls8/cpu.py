@@ -40,7 +40,7 @@ HLT = 0b00000001
 LDI = 0b10000010
 LD = 0b10000011
 ST = 0b10000100
-PUSH = 0b0100010
+PUSH = 0b01000101
 POP = 0b01000110
 PRN = 0b01000111
 PRA = 0b01001000
@@ -52,7 +52,11 @@ class CPU:
         self.ram = [0] * 256
         self.pc = 0
         self.fl = 0
+        self.sp = 7
 
+        self.reg[self.sp] = 0xF4  # setting stack pointer
+
+        # sets alu operations
         self.alu_ops = {}
         self.alu_ops[ADD] = lambda a, b: a + b
         self.alu_ops[SUB] = lambda a, b: a - b
@@ -69,6 +73,7 @@ class CPU:
         self.alu_ops[SHL] = lambda a, b: a << b
         self.alu_ops[SHR] = lambda a, b: a >> b
 
+        # sets pc operations that mutate pc
         self.pc_mutators = {}
         self.pc_mutators[CALL] = None
         self.pc_mutators[RET] = None
@@ -82,14 +87,15 @@ class CPU:
         self.pc_mutators[JLE] = None
         self.pc_mutators[JGE] = None
 
+        # sets pc operations
         self.pc_ops = {}
         self.pc_ops[NOP] = None
         self.pc_ops[HLT] = lambda: sys.exit(1)
         self.pc_ops[LDI] = self.handle_ldi
         self.pc_ops[LD] = None
         self.pc_ops[ST] = None
-        self.pc_ops[PUSH] = None
-        self.pc_ops[POP] = None
+        self.pc_ops[PUSH] = self.handle_push
+        self.pc_ops[POP] = self.handle_pop
         self.pc_ops[PRN] = lambda a: print(self.reg[a])
         self.pc_ops[PRA] = None
 
@@ -226,3 +232,17 @@ class CPU:
             self.reg[register_index] = value
         else:
             raise IndexError
+
+    def handle_push(self, value):
+        try:
+            self.reg[self.sp] -= 1
+            self.ram_write(self.reg[self.sp], self.reg[value])
+        except Exception:
+            print('Stack is full.')
+
+    def handle_pop(self, value):
+        try:
+            self.reg[value] = self.ram_read(self.reg[self.sp])
+            self.reg[self.sp] += 1
+        except Exception:
+            print('Stack is empty.')
