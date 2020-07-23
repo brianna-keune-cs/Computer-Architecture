@@ -75,8 +75,8 @@ class CPU:
 
         # sets pc operations that mutate pc
         self.pc_mutators = {}
-        self.pc_mutators[CALL] = None
-        self.pc_mutators[RET] = None
+        self.pc_mutators[CALL] = self.handle_call
+        self.pc_mutators[RET] = self.handle_ret
         self.pc_mutators[INT] = None
         self.pc_mutators[IRET] = None
         self.pc_mutators[JMP] = None
@@ -187,7 +187,6 @@ class CPU:
             self.alu(op, a, b, num_ops)
 
         elif determiner is 1:  # it is a pc mutator
-            self.run_op(num_ops, self.pc_mutators[op], a, b)
             self.run_op(self.pc_mutators[op], a, b, num_ops)
 
         else:  # it is a different kin of op
@@ -220,9 +219,15 @@ class CPU:
             operand_b = self.ram_read(
                 self.pc + 2) if self.pc + 2 < 257 else None
 
-            self.op_sorter(alu_or_pc, IR, operand_a, operand_b, num_operands)
-
-            self.pc += instruction_length
+            try:
+                self.op_sorter(alu_or_pc, IR, operand_a,
+                               operand_b, num_operands)
+            except Exception:
+                print(
+                    f'\noperation: {IR} was not recoginized\nexiting program...\n')
+                sys.exit(1)
+            if IR is not CALL and IR is not RET:
+                self.pc += instruction_length
 
     def handle_ldi(self, register_index, value):
         '''
@@ -246,3 +251,12 @@ class CPU:
             self.reg[self.sp] += 1
         except Exception:
             print('Stack is empty.')
+
+    def handle_call(self, reg_index):
+        self.reg[self.sp] -= 1
+        self.ram_write(self.reg[self.sp], self.pc + 2)
+        self.pc = self.reg[reg_index]
+
+    def handle_ret(self):
+        self.pc = self.ram_read(self.reg[self.sp])
+        self.reg[self.sp] += 1
